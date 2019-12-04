@@ -1,0 +1,16 @@
+Fold 0
+Fold 0
+Model 0 best validation rmse = 8.273665 on epoch 28
+Model 0 test rmse = 38.908643
+Model 1 best validation rmse = 9.256953 on epoch 28
+Model 1 test rmse = 22.482942
+Model 0 best validation rmse = 8.413508 on epoch 26
+Model 0 test rmse = 22.140793
+Model 2 best validation rmse = 8.935691 on epoch 27
+Model 2 test rmse = 20.894882
+Model 1 best validation rmse = 8.589560 on epoch 28
+Model 1 test rmse = 21.197046
+Model 3 best validation rmse = 9.185165 on epoch 27
+Model 3 test rmse = 20.530919
+Model 2 best validation rmse = 8.530042 on epoch 29
+Model 2 test rmse = 19.050155
