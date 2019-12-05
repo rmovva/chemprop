@@ -51,7 +51,7 @@ class MPNEncoder(nn.Module):
         self.W_i = nn.Linear(input_dim, self.hidden_size, bias=self.bias)
 
         if self.atom_messages:
-            w_h_input_size = self.hidden_size# + self.bond_fdim
+            w_h_input_size = self.hidden_size # + self.bond_fdim
         else:
             w_h_input_size = self.hidden_size
 
@@ -60,10 +60,10 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
-        self.featLen = 2*self.hidden_size + self.bond_fdim
+        self.featLen = self.hidden_size + self.bond_fdim
         self.W_att = nn.Linear(self.featLen, 1)
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
-        self.tokeys    = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
+        self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
         self.toqueries = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
         self.tovalues  = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
 
@@ -125,9 +125,9 @@ class MPNEncoder(nn.Module):
                 # message_weighted = message_attn @ self.tovalues(message) # num_atoms x (self.hidden_size * self.heads), basically weight messages
                 # meaningless global weighting without respect to position embedding; need to filter to local only
 
-                # nei_a_message = index_select_ND(message_weighted, a2a)  # num_atoms x max_num_bonds x hidden
-                # nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
-                # nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
+                nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
+                nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
+                nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
 
                 # calculate atom i's embedding
                 # duplicate message to all the bonds
@@ -138,11 +138,10 @@ class MPNEncoder(nn.Module):
                 # print(self.W_att.weight.shape)
                 
                 # print(a2a.shape[1], 4)
-                filtered_key_messages = index_select_ND(self.tokeys(message), a2a) # num_atoms x max_num_bonds x hidden
+                filtered_key_messages = index_select_ND(self.tokeys(nei_message), a2a) # num_atoms x max_num_bonds x hidden
                 duplicated_query_messages = self.toqueries(message).unsqueeze(dim=1).repeat(1,a2a.shape[1],1) # num_atoms x max_num_bonds x hidden
                 queryxKey = filtered_key_messages * duplicated_query_messages / scale # num_atoms x max_num_bonds x hidden
                 queryxKey = queryxKey.sum(dim = 2) # num_atoms x max_num_bonds x 1
-                # print(queryxKey.shape)
                 message_attn = F.softmax(queryxKey, dim = 1) # num_atoms x max_num_bonds
                 # print(message_attn.shape)
                 filtered_value_messages = index_select_ND(self.tovalues(message), a2a) # num_atoms x max_num_bonds x hidden
@@ -150,7 +149,6 @@ class MPNEncoder(nn.Module):
                 duplicated_attn_weights = message_attn.unsqueeze(dim=2).repeat(1,1,filtered_value_messages.shape[2]) # num_atoms x max_num_bonds x hidden
                 message_weighted = (duplicated_attn_weights * filtered_value_messages).sum(dim = 1) # num_atoms x hidden
                 message = message_weighted
-                # print(message_weighted.shape)
                 # scale by self.featLen since W_att makes the values inherently 
                 # prealphas = self.dropout_layer(self.act_func(self.W_att(messages_ij) / np.sqrt(self.featLen))) # num_atoms x max_num_bonds x 1 
                 # prealphas = torch.ones_like(prealphas)
