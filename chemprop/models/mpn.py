@@ -60,7 +60,7 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
-        self.featLen = 2 * self.hidden_size + self.bond_fdim
+        self.featLen = self.hidden_size #2 * self.hidden_size + self.bond_fdim
         self.W_att = nn.Linear(self.featLen, 1)
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
         self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
@@ -107,7 +107,7 @@ class MPNEncoder(nn.Module):
         if self.atom_messages:
             scale = np.sqrt(a2a.shape[1]) # hyperparameter for pre softmax normalization,
                                    # try 1 and a2a.shape[1]
-
+        bondKeys = False # flag for whether or not 
         # Message passing
         for depth in range(self.depth - 1):
             if self.undirected:
@@ -124,19 +124,19 @@ class MPNEncoder(nn.Module):
                 # message_attn = F.softmax(message_attn, dim = 1) # num_atoms x num_atoms
                 # message_weighted = message_attn @ self.tovalues(message) # num_atoms x (self.hidden_size * self.heads), basically weight messages
                 # meaningless global weighting without respect to position embedding; need to filter to local only
-
-                nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
-                nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
-                nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
-
-                # calculate atom i's embedding
-                # duplicate message to all the bonds
-                messages_i = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden)
-                # CONCAT(h_i, h_j, x_j), i.e. concatenate atom embeddings and atom j features
-                messages_ij = torch.cat([messages_i, nei_message], dim=2) #num_atoms x max_num_bonds x (hidden * 2 + bond_fdim)     
-                 
+                filtered_key_messages = None
+                if (bondKeys): #if want bond features in the key
+                    nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
+                    nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
+                    nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
+                    # calculate atom i's embedding; duplicate message to all the bonds
+                    messages_i = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden)
+                    # CONCAT(h_i, h_j, x_j), i.e. concatenate atom embeddings and atom j features
+                    messages_ij = torch.cat([messages_i, nei_message], dim=2) #num_atoms x max_num_bonds x (hidden * 2 + bond_fdim)     
+                    filtered_key_messages = self.tokeys(messages_ij) # num_atoms x max_num_bonds x hidden
+                else:
+                    filtered_key_messages = index_select_ND(self.tokeys(message), a2a) # num_atoms x max_num_bonds x hidden
                 
-                filtered_key_messages = self.tokeys(messages_ij) # num_atoms x max_num_bonds x hidden
                 duplicated_query_messages = self.toqueries(message).unsqueeze(dim=1).repeat(1,a2a.shape[1],1) # num_atoms x max_num_bonds x hidden
                  
                 queryxKey = filtered_key_messages * duplicated_query_messages / scale # num_atoms x max_num_bonds x hidden
