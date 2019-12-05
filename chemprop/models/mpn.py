@@ -60,7 +60,7 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
-        self.featLen = self.hidden_size + self.bond_fdim
+        self.featLen = 2 * self.hidden_size + self.bond_fdim
         self.W_att = nn.Linear(self.featLen, 1)
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
         self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
@@ -131,25 +131,24 @@ class MPNEncoder(nn.Module):
 
                 # calculate atom i's embedding
                 # duplicate message to all the bonds
-                # messages_i = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden)
+                messages_i = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden)
                 # CONCAT(h_i, h_j, x_j), i.e. concatenate atom embeddings and atom j features
-                # messages_ij = torch.cat([messages_i, nei_message], dim=2) #num_atoms x max_num_bonds x (hidden * 2 + bond_fdim)     
-                # print(messages_ij.shape)
-                # print(self.W_att.weight.shape)
+                messages_ij = torch.cat([messages_i, nei_message], dim=2) #num_atoms x max_num_bonds x (hidden * 2 + bond_fdim)     
+                 
                 
-                # print(a2a.shape[1], 4)
-                filtered_key_messages = index_select_ND(self.tokeys(nei_message), a2a) # num_atoms x max_num_bonds x hidden
+                filtered_key_messages = self.tokeys(messages_ij) # num_atoms x max_num_bonds x hidden
                 duplicated_query_messages = self.toqueries(message).unsqueeze(dim=1).repeat(1,a2a.shape[1],1) # num_atoms x max_num_bonds x hidden
+                 
                 queryxKey = filtered_key_messages * duplicated_query_messages / scale # num_atoms x max_num_bonds x hidden
                 queryxKey = queryxKey.sum(dim = 2) # num_atoms x max_num_bonds x 1
                 message_attn = F.softmax(queryxKey, dim = 1) # num_atoms x max_num_bonds
                 # print(message_attn.shape)
                 filtered_value_messages = index_select_ND(self.tovalues(message), a2a) # num_atoms x max_num_bonds x hidden
-                # print(filtered_value_messages.shape)
+                # print(message_attn.shape, filtered_value_messages.shape)
                 duplicated_attn_weights = message_attn.unsqueeze(dim=2).repeat(1,1,filtered_value_messages.shape[2]) # num_atoms x max_num_bonds x hidden
                 message_weighted = (duplicated_attn_weights * filtered_value_messages).sum(dim = 1) # num_atoms x hidden
                 message = message_weighted
-                # scale by self.featLen since W_att makes the values inherently 
+                # scale by self.featLen since W_att makes the values inherently bigger as a constant? but should converge to the smaller value so idk
                 # prealphas = self.dropout_layer(self.act_func(self.W_att(messages_ij) / np.sqrt(self.featLen))) # num_atoms x max_num_bonds x 1 
                 # prealphas = torch.ones_like(prealphas)
                 # alphas = F.softmax(prealphas, dim=1) # num_atoms x max_num_bonds x 1
