@@ -56,6 +56,18 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
+        # GGNN gather MLPs
+        # learns weights for each feature
+        self.gather_op1 = nn.Sequential(nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size),
+                                        nn.Dropout(self.dropout),
+                                        nn.Sigmoid()
+                                        )
+
+        # linear transform of messages
+        self.gather_op2 = nn.Sequential(nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size),
+                                        nn.Dropout(self.dropout)
+                                        )
+
     def forward(self,
                 mol_graph: BatchMolGraph,
                 features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
@@ -101,9 +113,7 @@ class MPNEncoder(nn.Module):
             message = nei_message.sum(dim=1) # num_atoms x hidden
 
         # Output step:
-        a_input = torch.cat([f_atoms, message], dim=1)  # num_atoms x (atom_fdim + hidden)
-        atom_hiddens = self.act_func(self.W_o(a_input))  # num_atoms x hidden
-        atom_hiddens = self.dropout_layer(atom_hiddens)  # num_atoms x hidden
+        gather_input = torch.cat([f_atoms, message], dim=1)  # num_atoms x (atom_fdim + hidden)
 
         # Readout
         mol_vecs = []
@@ -111,10 +121,12 @@ class MPNEncoder(nn.Module):
             if a_size == 0:
                 mol_vecs.append(self.cached_zero_vector)
             else:
-                cur_hiddens = atom_hiddens.narrow(0, a_start, a_size)
+                cur_hiddens = gather_input.narrow(0, a_start, a_size)
                 mol_vec = cur_hiddens  # (num_atoms, hidden_size)
 
-                mol_vec = mol_vec.sum(dim=0) / a_size
+                mol_vec = self.gather_op1(gather_input)*self.gather_op2(gather_input)
+
+                mol_vec = mol_vec.sum(dim=0)
                 mol_vecs.append(mol_vec)
 
         mol_vecs = torch.stack(mol_vecs, dim=0)  # (num_molecules, hidden_size)
