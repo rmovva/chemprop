@@ -56,6 +56,9 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
+        self.selfattention_op = nn.Linear(self.hidden_size, 1)
+        self.SM = nn.Softmax(dim=0)
+
     def forward(self,
                 mol_graph: BatchMolGraph,
                 features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
@@ -114,7 +117,10 @@ class MPNEncoder(nn.Module):
                 cur_hiddens = atom_hiddens.narrow(0, a_start, a_size)
                 mol_vec = cur_hiddens  # (num_atoms, hidden_size)
 
-                mol_vec = mol_vec.sum(dim=0) / a_size
+                alphas = self.SM(self.selfattention_op(mol_vec))
+                mol_vec = alphas*mol_vec
+
+                mol_vec = mol_vec.sum(dim=0)
                 mol_vecs.append(mol_vec)
 
         mol_vecs = torch.stack(mol_vecs, dim=0)  # (num_molecules, hidden_size)
