@@ -59,12 +59,15 @@ class MPNEncoder(nn.Module):
         # GGNN gather MLPs
         # learns weights for each feature
         self.gather_op1 = nn.Sequential(nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size),
+                                        nn.BatchNorm1d(self.hidden_size),
                                         nn.Dropout(self.dropout),
                                         nn.Sigmoid()
                                         )
 
         # linear transform of messages
         self.gather_op2 = nn.Sequential(nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size),
+                                        nn.BatchNorm1d(self.hidden_size),
+                                        nn.LeakyReLU(inplace=True),
                                         nn.Dropout(self.dropout)
                                         )
 
@@ -124,7 +127,7 @@ class MPNEncoder(nn.Module):
                 cur_hiddens = gather_input.narrow(0, a_start, a_size)
                 mol_vec = cur_hiddens  # (num_atoms, hidden_size)
 
-                mol_vec = self.gather_op1(gather_input)*self.gather_op2(gather_input)
+                mol_vec = self.gather_op1(cur_hiddens)*self.gather_op2(cur_hiddens)
 
                 mol_vec = mol_vec.sum(dim=0)
                 mol_vecs.append(mol_vec)
