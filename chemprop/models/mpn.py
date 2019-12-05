@@ -46,7 +46,7 @@ class MPNEncoder(nn.Module):
         self.cached_zero_vector = nn.Parameter(torch.zeros(self.hidden_size), requires_grad=False)
 
         # Input
-        input_dim = self.atom_fdim if self.atom_messages else self.bond_fdim
+        input_dim = self.atom_fdim
         self.W_i = nn.Linear(input_dim, self.hidden_size, bias=self.bias)
 
         w_h_input_size = self.hidden_size + self.bond_fdim
@@ -94,15 +94,13 @@ class MPNEncoder(nn.Module):
             nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
             nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
 
-            nei_message = self.W_h(nei_message)
+            nei_message = self.W_h(nei_message) # num_atoms x max_num_bonds x hidden
             nei_message = self.act_func(nei_message)
             nei_message = self.dropout_layer(nei_message)
 
-            message = nei_message.sum(dim=1)  # num_atoms x hidden + bond_fdim
+            message = nei_message.sum(dim=1) # num_atoms x hidden
 
-        # Output step: 
-        nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
-        a_message = nei_a_message.sum(dim=1)  # num_atoms x hidden
+        # Output step:
         a_input = torch.cat([f_atoms, message], dim=1)  # num_atoms x (atom_fdim + hidden)
         atom_hiddens = self.act_func(self.W_o(a_input))  # num_atoms x hidden
         atom_hiddens = self.dropout_layer(atom_hiddens)  # num_atoms x hidden
