@@ -56,6 +56,12 @@ class MPNEncoder(nn.Module):
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
+        self.attention_op = nn.Sequential(nn.Linear(2*self.hidden_size + self.bond_fdim, 1),
+                                          nn.LeakyReLU(inplace=True),
+                                          nn.Dropout(self.dropout),
+                                          nn.Softmax(dim=1)
+                                         )
+
     def forward(self,
                 mol_graph: BatchMolGraph,
                 features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
@@ -94,10 +100,16 @@ class MPNEncoder(nn.Module):
             nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
             nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
 
+            # current node embeddings
+            node_message = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden
+            concat_message = torch.cat([node_message, nei_message], dim=2) # num_atoms x max_num_bonds x 2*hidden + bond_fdim
+            alphas = self.attention_op(concat_message) # num_atoms x max_num_bonds x 1
+
             nei_message = self.W_h(nei_message) # num_atoms x max_num_bonds x hidden
-            nei_message = self.act_func(nei_message)
+            nei_message = self.act_func(nei_message) 
             nei_message = self.dropout_layer(nei_message)
 
+            nei_message = alphas * nei_message # num_atoms x max_num_bonds x hidden
             message = nei_message.sum(dim=1) # num_atoms x hidden
 
         # Output step:
