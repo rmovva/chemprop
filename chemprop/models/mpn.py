@@ -106,7 +106,7 @@ class MPNEncoder(nn.Module):
             alphas = self.attention_op(concat_message) # num_atoms x max_num_bonds x 1
 
             nei_message = self.W_h(nei_message) # num_atoms x max_num_bonds x hidden
-            nei_message = self.act_func(nei_message) 
+            nei_message = self.act_func(nei_message)
             nei_message = self.dropout_layer(nei_message)
 
             nei_message = alphas * nei_message # num_atoms x max_num_bonds x hidden
@@ -126,7 +126,7 @@ class MPNEncoder(nn.Module):
                 cur_hiddens = atom_hiddens.narrow(0, a_start, a_size)
                 mol_vec = cur_hiddens  # (num_atoms, hidden_size)
 
-                mol_vec = mol_vec.sum(dim=0) / a_size
+                mol_vec = mol_vec.sum(dim=0)
                 mol_vecs.append(mol_vec)
 
         mol_vecs = torch.stack(mol_vecs, dim=0)  # (num_molecules, hidden_size)
