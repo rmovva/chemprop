@@ -17,10 +17,10 @@ from chemprop.utils import create_logger, makedirs
 
 
 SPACE = {
-    'hidden_size': hp.quniform('hidden_size', low=100, high=800, q=100),
+    'hidden_size': hp.quniform('hidden_size', low=100, high=400, q=100),
     'depth': hp.quniform('depth', low=2, high=5, q=1),
-    'dropout': hp.quniform('dropout', low=0.0, high=0.4, q=0.05),
-    'ffn_num_layers': hp.quniform('ffn_num_layers', low=1, high=3, q=1)
+    'dropout': hp.quniform('dropout', low=0.0, high=0.2, q=0.05),
+    'ffn_num_layers': hp.quniform('ffn_num_layers', low=2, high=3, q=1)
 }
 INT_KEYS = ['hidden_size', 'depth', 'ffn_num_layers']
 
