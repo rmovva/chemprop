@@ -59,9 +59,13 @@ class MPNEncoder(nn.Module):
         self.W_h = nn.Linear(w_h_input_size, self.hidden_size, bias=self.bias)
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
-
-        self.featLen = self.hidden_size #2 * self.hidden_size + self.bond_fdim
-        self.W_att = nn.Linear(self.featLen, 1)
+        self.bondKeys = False # flag for whether or not 
+        self.usingGru = True # flag for whether or not 
+        if (self.bondKeys):
+            self.featLen = 2 * self.hidden_size + self.bond_fdim
+        else:
+            self.featLen = self.hidden_size
+        
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
         self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
         self.toqueries = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
@@ -109,7 +113,6 @@ class MPNEncoder(nn.Module):
         if self.atom_messages:
             scale = np.sqrt(a2a.shape[1]) # hyperparameter for pre softmax normalization,
                                    # try 1 and a2a.shape[1]
-        bondKeys = False # flag for whether or not 
         # Message passing
         self.ht = f_atoms
         for depth in range(self.depth - 1):
@@ -128,7 +131,7 @@ class MPNEncoder(nn.Module):
                 # message_weighted = message_attn @ self.tovalues(message) # num_atoms x (self.hidden_size * self.heads), basically weight messages
                 # meaningless global weighting without respect to position embedding; need to filter to local only
                 filtered_key_messages = None
-                if (bondKeys): #if want bond features in the key
+                if (self.bondKeys): #if want bond features in the key
                     nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
                     nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
                     nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
@@ -170,9 +173,12 @@ class MPNEncoder(nn.Module):
             message_weighted = self.W_h(message_weighted)
             message_weighted = self.act_func(input + message_weighted)  # num_bonds x hidden_size
             message_weighted = self.dropout_layer(message_weighted)  # num_bonds x hidden
-            _, h = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
-            message = h[0]
-
+            if(self.usingGru):
+                _, h = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
+                message = h[0]
+            else:
+                message = message_weighted
+            
         a2x = a2a if self.atom_messages else a2b
         nei_a_message = index_select_ND(message, a2x)  # num_atoms x max_num_bonds x hidden
         a_message = nei_a_message.sum(dim=1)  # num_atoms x hidden
