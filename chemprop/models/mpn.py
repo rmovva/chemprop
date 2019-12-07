@@ -66,6 +66,8 @@ class MPNEncoder(nn.Module):
         self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
         self.toqueries = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
         self.tovalues  = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
+        self.gru = nn.GRU(self.hidden_size, self.hidden_size, 1)
+        self.ht = None #hidden state of gru, hidden x 1
 
     def forward(self,
                 mol_graph: BatchMolGraph,
@@ -109,6 +111,7 @@ class MPNEncoder(nn.Module):
                                    # try 1 and a2a.shape[1]
         bondKeys = False # flag for whether or not 
         # Message passing
+        self.ht = f_atoms
         for depth in range(self.depth - 1):
             if self.undirected:
                 message = (message + message[b2revb]) / 2
@@ -147,7 +150,7 @@ class MPNEncoder(nn.Module):
                 # print(message_attn.shape, filtered_value_messages.shape)
                 duplicated_attn_weights = message_attn.unsqueeze(dim=2).repeat(1,1,filtered_value_messages.shape[2]) # num_atoms x max_num_bonds x hidden
                 message_weighted = (duplicated_attn_weights * filtered_value_messages).sum(dim = 1) # num_atoms x hidden
-                message = message_weighted
+                # message = message_weighted
                 # scale by self.featLen since W_att makes the values inherently bigger as a constant? but should converge to the smaller value so idk
                 # prealphas = self.dropout_layer(self.act_func(self.W_att(messages_ij) / np.sqrt(self.featLen))) # num_atoms x max_num_bonds x 1 
                 # prealphas = torch.ones_like(prealphas)
@@ -162,10 +165,13 @@ class MPNEncoder(nn.Module):
                 a_message = nei_a_message.sum(dim=1)  # num_atoms x hidden
                 rev_message = message[b2revb]  # num_bonds x hidden
                 message = a_message[b2a] - rev_message  # num_bonds x hidden
+                message_weighted = message
 
-            message = self.W_h(message)
-            message = self.act_func(input + message)  # num_bonds x hidden_size
-            message = self.dropout_layer(message)  # num_bonds x hidden
+            message_weighted = self.W_h(message_weighted)
+            message_weighted = self.act_func(input + message_weighted)  # num_bonds x hidden_size
+            message_weighted = self.dropout_layer(message_weighted)  # num_bonds x hidden
+            _, h = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
+            message = h[0]
 
         a2x = a2a if self.atom_messages else a2b
         nei_a_message = index_select_ND(message, a2x)  # num_atoms x max_num_bonds x hidden
