@@ -158,6 +158,8 @@ def add_train_args(parser: ArgumentParser):
                         help='Number of models in ensemble')
     parser.add_argument('--hidden_size', type=int, default=300,
                         help='Dimensionality of hidden layer s in MPN')
+    parser.add_argument('--attn_hidden_size', type=int, default=300,
+                        help='Dimensionality of hidden layer s in QKV')
     parser.add_argument('--bias', action='store_true', default=False,
                         help='Whether to add bias to linear layers')
     parser.add_argument('--depth', type=int, default=3,

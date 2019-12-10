@@ -5,7 +5,7 @@ from copy import deepcopy
 import json
 from typing import Dict, Union
 import os
-
+from math import log
 from hyperopt import fmin, hp, tpe
 import numpy as np
 
@@ -17,11 +17,11 @@ from chemprop.utils import create_logger, makedirs
 
 
 SPACE = {
-    'hidden_size': hp.lognormal('hidden_size', low=300, high=2400, q=100),
+    'hidden_size': hp.qloguniform('hidden_size', low=log(300), high=log(2200), q=(100)),
     'attn_hidden_size': hp.quniform('attn_hidden_size', low=100, high=600, q=100),
     'depth': hp.quniform('depth', low=2, high=6, q=1),
-    'dropout': hp.lognormal('dropout', low=0.0, high=0.4, q=0.05),
-    'ffn_num_layers': hp.lognormal('ffn_num_layers', low=1, high=3, q=1)
+    'dropout': hp.qloguniform('dropout', low=log(0.001), high=log(0.401), q=(0.05)),
+    'ffn_num_layers': hp.qloguniform('ffn_num_layers', low=log(1), high=log(3), q=(1))
 }
 INT_KEYS = ['hidden_size', 'attn_hidden_size', 'depth', 'ffn_num_layers']
 
@@ -39,7 +39,8 @@ def grid_search(args: Namespace):
         # Convert hyperparams from float to int when necessary
         for key in INT_KEYS:
             hyperparams[key] = int(hyperparams[key])
-
+            print(key, hyperparams[key])
+        print("dropout", hyperparams["dropout"])
         # Update args with hyperparams
         hyper_args = deepcopy(args)
         if args.save_dir is not None:

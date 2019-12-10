@@ -60,7 +60,7 @@ class MPNEncoder(nn.Module):
         self.W_h = nn.Linear(w_h_input_size, self.hidden_size, bias=self.bias)
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
-        self.bondKeys = False # flag for whether or not 
+        self.bondKeys = True # flag for whether or not 
         self.usingGru = True # flag for whether or not 
         if (self.bondKeys):
             self.featLen = self.hidden_size + self.bond_fdim
@@ -68,9 +68,9 @@ class MPNEncoder(nn.Module):
             self.featLen = self.hidden_size
         
         self.norm1 = nn.LayerNorm(self.hidden_size)
-        # self.attn_hidden = self.hidden_size / 2
+        # self.attn_hidden_size = self.hidden_size / 2
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
-        self.tokeys    = nn.Linear(self.featLen, self.attn_hidden * self.heads, bias=False)
+        self.tokeys    = nn.Linear(self.featLen, self.attn_hidden_size * self.heads, bias=False)
         self.toqueries = nn.Linear(self.hidden_size, self.attn_hidden_size * self.heads, bias=False)
         self.tovalues  = nn.Linear(self.hidden_size, self.attn_hidden_size * self.heads, bias=False)
         self.gru = nn.GRU(self.hidden_size, self.hidden_size, 1)
@@ -163,11 +163,11 @@ class MPNEncoder(nn.Module):
             # message_weighted = self.W_h(message_weighted)
             message_weighted = self.act_func(input + message_weighted)  # num_bonds x hidden_size
             if(self.usingGru):
-                message_weighted = self.LayerNorm(message_weighted)  # num_bonds x hidden
+                message_weighted = self.norm1(message_weighted)  # num_bonds x hidden
                 h, _ = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
                 message = h[0]
                 
-                if(sum(h != _) > 0):
+                if(not torch.eq(h,  _).all()):
                     print("Aayush was wrong about the gru. Validation.")
                 # log h and _ being equal
             else:
