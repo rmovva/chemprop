@@ -136,7 +136,7 @@ def add_train_args(parser: ArgumentParser):
                              'file will override arguments specified via the command line or by the defaults.')
 
     # Training arguments
-    parser.add_argument('--epochs', type=int, default=30,
+    parser.add_argument('--epochs', type=int, default=35,
                         help='Number of epochs to run')
     parser.add_argument('--batch_size', type=int, default=50,
                         help='Batch size')
@@ -153,11 +153,11 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--no_features_scaling', action='store_true', default=False,
                         help='Turn off scaling of features')
 
-    # Model arguments
+    # Model arguments 
     parser.add_argument('--ensemble_size', type=int, default=1,
                         help='Number of models in ensemble')
     parser.add_argument('--hidden_size', type=int, default=300,
-                        help='Dimensionality of hidden layers in MPN')
+                        help='Dimensionality of hidden layer s in MPN')
     parser.add_argument('--bias', action='store_true', default=False,
                         help='Whether to add bias to linear layers')
     parser.add_argument('--depth', type=int, default=3,
@@ -173,7 +173,7 @@ def add_train_args(parser: ArgumentParser):
                         help='Hidden dim for higher-capacity FFN (defaults to hidden_size)')
     parser.add_argument('--ffn_num_layers', type=int, default=2,
                         help='Number of layers in FFN after MPN encoding')
-    parser.add_argument('--atom_messages', action='store_true', default=False,
+    parser.add_argument('--atom_messages', action='store_true', default=True,
                         help='Use messages on atoms instead of messages on bonds')
 
 

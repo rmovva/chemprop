@@ -134,6 +134,7 @@ class TestTrain(unittest.TestCase):
         args.dataset_type = 'regression'
         args.batch_size = 2
         args.hidden_size = 5
+        args.attn_hidden_size = 4
         args.epochs = 1
         args.quiet = True
         self.args = args
@@ -333,6 +334,7 @@ class TestPredict(unittest.TestCase):
         args.dataset_type = 'regression'
         args.batch_size = 2
         args.hidden_size = 5
+        args.attn_hidden_size = 4
         args.epochs = 1
         args.quiet = True
         self.temp_dir = TemporaryDirectory()
@@ -390,6 +392,7 @@ class TestHyperopt(unittest.TestCase):
             args.dataset_type = 'regression'
             args.batch_size = 2
             args.hidden_size = 5
+            args.attn_hidden_size = 4
             args.epochs = 1
             args.quiet = True
             temp_file = NamedTemporaryFile()

@@ -24,6 +24,7 @@ class MPNEncoder(nn.Module):
         self.atom_fdim = atom_fdim
         self.bond_fdim = bond_fdim
         self.hidden_size = args.hidden_size
+        self.attn_hidden_size = args.attn_hidden_size
         self.bias = args.bias
         self.depth = args.depth
         self.dropout = args.dropout
@@ -62,14 +63,16 @@ class MPNEncoder(nn.Module):
         self.bondKeys = False # flag for whether or not 
         self.usingGru = True # flag for whether or not 
         if (self.bondKeys):
-            self.featLen = 2 * self.hidden_size + self.bond_fdim
+            self.featLen = self.hidden_size + self.bond_fdim
         else:
             self.featLen = self.hidden_size
         
+        self.norm1 = nn.LayerNorm(self.hidden_size)
+        # self.attn_hidden = self.hidden_size / 2
         self.heads = 1 #TO-DO: HOW DO I DO HYPER PARAMETER OPTIMIZAITON W THIS VAL?. also todo implement multihead.
-        self.tokeys    = nn.Linear(self.featLen, self.hidden_size * self.heads, bias=False)
-        self.toqueries = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
-        self.tovalues  = nn.Linear(self.hidden_size, self.hidden_size * self.heads, bias=False)
+        self.tokeys    = nn.Linear(self.featLen, self.attn_hidden * self.heads, bias=False)
+        self.toqueries = nn.Linear(self.hidden_size, self.attn_hidden_size * self.heads, bias=False)
+        self.tovalues  = nn.Linear(self.hidden_size, self.attn_hidden_size * self.heads, bias=False)
         self.gru = nn.GRU(self.hidden_size, self.hidden_size, 1)
         self.ht = None #hidden state of gru, hidden x 1
 
@@ -110,9 +113,9 @@ class MPNEncoder(nn.Module):
             input = self.W_i(f_bonds)  # num_bonds x hidden_size
         message = self.act_func(input)  # num_atoms/num_bonds x hidden_size
         
-        if self.atom_messages:
-            scale = np.sqrt(a2a.shape[1]) # hyperparameter for pre softmax normalization,
-                                   # try 1 and a2a.shape[1]
+        scale = np.sqrt(self.attn_hidden_size) # hyperparameter for pre softmax normalization,
+
+        # hyperparameter search with scale = 1?
         # Message passing
         self.ht = f_atoms
         for depth in range(self.depth - 1):
@@ -123,60 +126,52 @@ class MPNEncoder(nn.Module):
                 # try muliplying softmax by count of # of atoms
                 
                 # filtered_messages = index_select_ND(self.tovalues(message), a2a)
-                # message_attn = self.toqueries(message) @ self.tokeys(message).T / np.sqrt(self.hidden * self.heads) #num_atoms x num_atoms
+                # w = self.toqueries(message) @ self.tokeys(message).T / np.sqrt(self.hidden * self.heads) #num_atoms x num_atoms
                 # above normalized to help softmax converge (not sure if neccessary but mentioned in peter bloems post) 
                 
                 # add masking (incomplete)
-                # message_attn = F.softmax(message_attn, dim = 1) # num_atoms x num_atoms
-                # message_weighted = message_attn @ self.tovalues(message) # num_atoms x (self.hidden_size * self.heads), basically weight messages
+                # w = F.softmax(w, dim = 1) # num_atoms x num_atoms
+                # message_weighted = w @ self.tovalues(message) # num_atoms x (self.hidden_size * self.heads), basically weight messages
                 # meaningless global weighting without respect to position embedding; need to filter to local only
                 filtered_key_messages = None
                 if (self.bondKeys): #if want bond features in the key
                     nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
                     nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
                     nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
-                    # calculate atom i's embedding; duplicate message to all the bonds
-                    messages_i = message.unsqueeze(dim=1).repeat(1, nei_message.shape[1], 1) # num_atoms x max_num_bonds x hidden)
-                    # CONCAT(h_i, h_j, x_j), i.e. concatenate atom embeddings and atom j features
-                    messages_ij = torch.cat([messages_i, nei_message], dim=2) #num_atoms x max_num_bonds x (hidden * 2 + bond_fdim)     
-                    filtered_key_messages = self.tokeys(messages_ij) # num_atoms x max_num_bonds x hidden
+                    filtered_key_messages = self.tokeys(nei_message) # num_atoms x max_num_bonds x hidden
                 else:
                     filtered_key_messages = index_select_ND(self.tokeys(message), a2a) # num_atoms x max_num_bonds x hidden
                 
-                duplicated_query_messages = self.toqueries(message).unsqueeze(dim=1).repeat(1,a2a.shape[1],1) # num_atoms x max_num_bonds x hidden
-                 
-                queryxKey = filtered_key_messages * duplicated_query_messages / scale # num_atoms x max_num_bonds x hidden
+                # manual dot product done by duplicating query max_num_bonds times and elementwise mult w keys
+                duplicated_query = self.toqueries(message).unsqueeze(dim=1).repeat(1,a2a.shape[1],1) # num_atoms x max_num_bonds x hidden
+                queryxKey = filtered_key_messages * duplicated_query / scale # num_atoms x max_num_bonds x hidden
                 queryxKey = queryxKey.sum(dim = 2) # num_atoms x max_num_bonds x 1
-                message_attn = F.softmax(queryxKey, dim = 1) # num_atoms x max_num_bonds
-                # print(message_attn.shape)
-                filtered_value_messages = index_select_ND(self.tovalues(message), a2a) # num_atoms x max_num_bonds x hidden
-                # print(message_attn.shape, filtered_value_messages.shape)
-                duplicated_attn_weights = message_attn.unsqueeze(dim=2).repeat(1,1,filtered_value_messages.shape[2]) # num_atoms x max_num_bonds x hidden
-                message_weighted = (duplicated_attn_weights * filtered_value_messages).sum(dim = 1) # num_atoms x hidden
-                # message = message_weighted
-                # scale by self.featLen since W_att makes the values inherently bigger as a constant? but should converge to the smaller value so idk
-                # prealphas = self.dropout_layer(self.act_func(self.W_att(messages_ij) / np.sqrt(self.featLen))) # num_atoms x max_num_bonds x 1 
-                # prealphas = torch.ones_like(prealphas)
-                # alphas = F.softmax(prealphas, dim=1) # num_atoms x max_num_bonds x 1
+                w = F.softmax(queryxKey, dim = 1) # num_atoms x max_num_bonds
 
-                # message = alphas * nei_message # num_atoms x max_num_bonds x hidden + bond_fdim
-                # message = message.sum(dim=1)  # num_atoms x hidden + bond_fdim
+                # filtered means only the neighbors
+                filtered_value_messages = index_select_ND(self.tovalues(message), a2a) # num_atoms x max_num_bonds x hidden
+
+                duplicated_attn_weights = w.unsqueeze(dim=2).repeat(1,1,filtered_value_messages.shape[2]) # num_atoms x max_num_bonds x hidden
+                message_weighted = (duplicated_attn_weights * filtered_value_messages).sum(dim = 1) # num_atoms x hidden
             else:
-                # m(a1 -> a2) = [sum_{a0 \in nei(a1)} m(a0 -> a1)] - m(a2 -> a1)
-                # message      a_message = sum(nei_a_message)      rev_message
                 nei_a_message = index_select_ND(message, a2b)  # num_atoms x max_num_bonds x hidden
                 a_message = nei_a_message.sum(dim=1)  # num_atoms x hidden
                 rev_message = message[b2revb]  # num_bonds x hidden
                 message = a_message[b2a] - rev_message  # num_bonds x hidden
                 message_weighted = message
 
-            message_weighted = self.W_h(message_weighted)
+            # message_weighted = self.W_h(message_weighted)
             message_weighted = self.act_func(input + message_weighted)  # num_bonds x hidden_size
-            message_weighted = self.dropout_layer(message_weighted)  # num_bonds x hidden
             if(self.usingGru):
-                _, h = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
+                message_weighted = self.LayerNorm(message_weighted)  # num_bonds x hidden
+                h, _ = self.gru(message_weighted.unsqueeze(dim=0), message.unsqueeze(dim=0)) # message is the hidden state in the gru. o = h so we discard a value at random
                 message = h[0]
+                
+                if(sum(h != _) > 0):
+                    print("Aayush was wrong about the gru. Validation.")
+                # log h and _ being equal
             else:
+                message_weighted = self.dropout_layer(message_weighted)  # num_bonds x hidden
                 message = message_weighted
             
         a2x = a2a if self.atom_messages else a2b
